@@ -1,0 +1,187 @@
+import math
+# ----------------------------------------------------------------------------- #
+#                                                                               #              
+#    Project:        Using Threads                                              #
+#    Module:         main.py                                                    #
+#    Author:         VEX                                                        #
+#    Created:        Fri Aug 05 2022                                            #
+#    Description:    This example will show how to run multiple threads (tasks) # 
+#                    in a project at the same time                              #
+#                                                                               #                                                                          
+#    Configuration:  None                                                       #
+#                                                                               #                                                                          
+# ----------------------------------------------------------------------------- #
+
+# Library imports
+from vex import *
+
+# Brain should be defined by default
+brain = Brain()
+controller = Controller()
+f_left_motor = Motor(Ports.PORT10, True)
+b_left_motor = Motor(Ports.PORT20, True)
+t_left_motor = Motor(Ports.PORT19, False)
+f_right_motor = Motor(Ports.PORT1, False)
+b_right_motor = Motor(Ports.PORT11, False)
+t_right_motor = Motor(Ports.PORT12, True)
+intake = Motor(Ports.PORT9, False)
+inertial = Inertial(Ports.PORT15)
+pto = DigitalOut(brain.three_wire_port.h)
+wings = DigitalOut(brain.three_wire_port.g)
+
+
+def cw_turn_pid(adegrees, kp, ki, kd, max_steps, return_period = 0):
+    inertial.set_heading(0, DEGREES)
+    cur_degrees = inertial.heading(DEGREES)
+    prev_degrees = 0
+    cur_sum = 0
+    cur_step = 0
+    err = adegrees
+    tai94 = 0
+    prev_der = 0
+    osc_started = 0
+    osc_start_step = 0
+    osc_periods = []
+    while( abs(err) > 0.5 and cur_step <= max_steps or abs(prev_degrees - cur_degrees) > 0.1):
+        if(cur_step != 0):
+            wait(10, MSEC)
+        prev_degrees = cur_degrees
+        cur_degrees = inertial.heading(DEGREES)
+        if(cur_degrees > 350):
+            cur_degrees -= 360
+        #tai94 += 0.02 * (prev_degrees + cur_degrees) * 0.5
+        if(prev_der > prev_degrees - cur_degrees):
+            tai94 += 1.5 * err
+        if(ki != 0):
+            if(tai94 > 12 / ki):
+                tai94 = 12 / ki
+        else:
+            tai94 = 0
+        cout = kp * err + ki * tai94 + kd * (prev_degrees - cur_degrees)
+        if(abs(err) > 10):
+            cout+=1
+        if(cout > 12):
+            cout = 12
+        f_left_motor.spin(FORWARD, cout, VoltageUnits.VOLT)
+        b_left_motor.spin(FORWARD, cout, VoltageUnits.VOLT)
+        f_right_motor.spin(REVERSE, cout, VoltageUnits.VOLT)
+        b_right_motor.spin(REVERSE, cout, VoltageUnits.VOLT)
+        err = adegrees - cur_degrees
+        cur_step+=1
+        prev_der = prev_degrees - cur_degrees
+        print("err: " + str(abs(err)))
+        print("deriv = " + str(prev_degrees - cur_degrees))
+        print("cout time:  " + str(cout))
+        print("tai's model : " +str(tai94))
+        #osc logging
+        if(err < 0):
+            if(osc_started % 2==0):
+                osc_started+=1
+                osc_start_step = cur_step
+        else:
+            if(osc_started % 2 == 1):
+                osc_started += 1
+                osc_periods+=[cur_step-osc_start_step]
+
+            
+    f_left_motor.stop()
+    b_left_motor.stop()
+    f_right_motor.stop()
+    b_right_motor.stop()
+    print("exit")
+    if(len(osc_periods) == 0):
+        return 1000
+    mean = sum(osc_periods) / len(osc_periods)
+    if return_period == 0:
+        return sum([abs(i - mean) for i in osc_periods]) / len(osc_periods)
+    else:
+        return mean
+        
+def ccw_turn_pid(adegrees, kp, ki, kd, max_steps):
+    inertial.set_heading(0, DEGREES)
+    cur_degrees = inertial.heading(DEGREES)
+    prev_degrees = 0
+    cur_sum = 0
+    cur_step = 0
+    err = adegrees
+    tai94 = 0
+    prev_der = 0
+    while( abs(err) > 0.5 and cur_step <= max_steps or abs(prev_degrees - cur_degrees) > 0.1):
+        if(cur_step != 0):
+            wait(10, MSEC)
+        prev_degrees = cur_degrees
+        cur_degrees = inertial.heading(DEGREES)
+        if(cur_degrees < 10):
+            cur_degrees *= -1
+        else:
+            cur_degrees = 360 - cur_degrees
+        #tai94 += 0.02 * (prev_degrees + cur_degrees) * 0.5
+        if(prev_der > prev_degrees - cur_degrees):
+            tai94 += 1.5 * err
+        if(ki != 0):
+            if(tai94 > 12 / ki):
+                tai94 = 12 / ki
+        else:
+            tai94 = 0
+        cout = kp * err + ki * tai94 + kd * (prev_degrees - cur_degrees)
+        if(abs(err) > 10):
+            cout+=1
+        if(cout > 12):
+            cout = 12
+        f_left_motor.spin(FORWARD, -1 * cout, VoltageUnits.VOLT)
+        b_left_motor.spin(FORWARD, -1 * cout, VoltageUnits.VOLT)
+        f_right_motor.spin(REVERSE, -1 * cout, VoltageUnits.VOLT)
+        b_right_motor.spin(REVERSE, -1 * cout, VoltageUnits.VOLT)
+        err = adegrees - cur_degrees
+        cur_step+=1
+        prev_der = prev_degrees - cur_degrees
+        #print("err: " + str(abs(err)))
+        #print("deriv = " + str(prev_degrees - cur_degrees))
+        #print("cout time:  " + str(cout))
+        #print("tai's model : " +str(tai94))
+    f_left_motor.stop()
+    b_left_motor.stop()
+    f_right_motor.stop()
+    b_right_motor.stop()
+    print("exit")
+
+def autotune_degrees(degrees):
+    #this is pretty fast but i'm a speedy gal what can i say
+    kp = 0.1
+    kd = 0
+    ki = 0
+    last_osc = 1000
+    while(True):
+        cur_osc = cw_turn_pid(degrees, kp, ki, kd,1000)
+        if(last_osc >= cur_osc):
+            last_osc = cur_osc
+            kp += 0.05
+        else:
+            break
+    last_osc = cw_turn_pid(degrees, kp, ki, kd, 1000, 1)
+    return [0.6 * kp, last_osc * 0.5, last_osc * 0.125]
+
+
+inertial.set_heading(0,DEGREES)
+"""
+while(True):
+    print(inertial.heading())
+"""
+while(inertial.heading() == 0):
+    wait(10,MSEC)
+#cur kd = 1.8
+#cw_turn_pid(90,0.24,0.018,2.5*1.2,1000)
+cw_turn_pid(90,0.35,0.025,5.5,1000)
+kvals = []
+#kvals = autotune_degrees(90)
+#cw_turn_pid(90, kvals[0], kvals[1], kvals[2], 1000)
+
+
+#cw_turn_pid(90,0.27,0.025,3.6875,1000)
+
+wait(1,SECONDS)
+print(inertial.heading())
+#ccw_turn_pid(180,0.35,0.025,5.5,1000)
+#wait(1,SECONDS)
+print(inertial.heading())
+#print(kvals)
