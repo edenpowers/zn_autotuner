@@ -94,6 +94,8 @@ def cw_turn_pid(adegrees, kp, ki, kd, max_steps, return_period = 0):
     mean = sum(osc_periods) / len(osc_periods)
     if return_period == 0:
         return sum([abs(i - mean) for i in osc_periods]) / len(osc_periods)
+    if return_period == 2:
+        return cur_step
     else:
         return mean
         
@@ -162,6 +164,90 @@ def autotune_degrees(degrees):
     return [0.6 * kp, last_osc * 0.5, last_osc * 0.125]
 
 
+def check_func(degrees, kp, ki, kd, _a, _b):
+    return cw_turn_pid(degrees, kp, ki, kd, 1000, 2)
+class Firefly:
+    def __init__(self, kp, ki, kd, speed =250) -> None:
+        self.kp = kp
+        self.ki = ki
+        self.kd = kd
+        self.speed = speed
+    def find_speed(self, target) -> None:
+        self.speed = 250 - check_func(target, self.kp, self.ki, self.kd, 250, 2)
+        #self.speed = check_func(target, self.kp, self.ki, self.kd, 250, 2)
+    def calculate_next_self(self, other_kp, other_ki, other_kd, other_speed, batch_num = 8) -> None:
+        max_speed = 1.0 #1.0 = clamped growth, actual max value = explosive growth
+        #kp_absorption = 5.6e-4
+        #ki_absorption = 4e-5
+        #kd_absorption = 0.0048
+        absorption = 0.002
+        next_vector = [0,0,0]
+        for i in range(batch_num - 1):
+            fly_distance_sq = (self.kp-other_kp[i])**2 + (self.ki-other_ki[i])**2 + (self.kd-other_kd[i])**2
+            if(other_speed[i] < 0):
+                attractiveness = 0
+            else:
+                attractiveness = math.exp(-1 * absorption * fly_distance_sq)  * max_speed * (other_speed[i]/ (1.0 * (batch_num - 1)))
+                #attractiveness = math.exp(-1 * absorption * fly_distance_sq) * (other_speed[i]/ (30.0))
+            if(attractiveness > (max_speed / (batch_num -1))):
+                attractiveness = (max_speed / (batch_num -1))
+            #print(attractiveness)
+            #print("exp")
+            #print(math.exp(-1 * absorption * fly_distance_sq))
+            #print((other_speed[i]/ (60.0 * batch_num - 1)))
+            
+            if(self.speed <= other_speed[i]):
+                next_vector[0] += (other_kp[i] - self.kp) * attractiveness
+                next_vector[1] += (other_ki[i] - self.ki) * attractiveness
+                next_vector[2] += (other_kd[i] - self.kd) * attractiveness
+
+        #print(next_vector)
+        self.kp += next_vector[0]
+        self.ki += next_vector[1]
+        self.kd += next_vector[2]
+
+def run_FA(start_kp, start_ki, start_kd, kp_scale = 0.1, ki_scale = 0.01, kd_scale = 0.3, generations = 3):
+    kp_dir = [(x) * kp_scale + start_kp for x in [1,1,1,1,-1,-1,-1,-1]]
+    ki_dir = [(x) * ki_scale + start_ki for x in [1,1,-1,-1,1,1,-1,-1]]
+    kd_dir = [(x) * kd_scale + start_kd for x in [1,-1,1,-1,1,-1,1,-1]]
+    flys = []
+    for i in range(8):
+        flys.append(Firefly(kp_dir[i], ki_dir[i], kd_dir[i]))
+
+    print("--==GENERATION: " + str(0) + "==--")
+    for i in flys:
+        print("("+ str(i.kp) + ", " + str(i.ki) + ", " + str(i.kd) + ")")
+
+    #other_speed = [100 for x in range(7)]
+    for i99 in range(generations):
+        new_flys = []
+        for i in range(8):
+            flys[i].find_speed(90)
+            #print(flys[i].speed)
+        for i in range(8):
+            new_flys.append(Firefly(flys[i].kp,flys[i].ki,flys[i].kd, flys[i].speed))
+            other_kp = [flys[x + 1].kp if x >= i else flys[x].kp for x in range(7)]
+            other_ki = [flys[x + 1].ki if x >= i else flys[x].ki for x in range(7)]
+            other_kd = [flys[x + 1].kd if x >= i else flys[x].kd for x in range(7)]
+            other_speed = [flys[x + 1].speed if x >= i else flys[x].speed for x in range(7)]
+            #print(other_speed)
+            #print(i)
+            #print(other_kp)
+            new_flys[i].calculate_next_self(other_kp, other_ki, other_kd, other_speed)
+        flys = new_flys
+        print("--==GENERATION: " + str(i99 + 1) + "==--")
+        for i in flys:
+            print("("+ str(i.kp) + ", " + str(i.ki) + ", " + str(i.kd) + ")")
+    sum_kp = 0
+    sum_ki = 0
+    sum_kd = 0
+    for i in flys:
+        sum_kp += i.kp
+        sum_ki += i.ki
+        sum_kd += i.kd
+    print("--==FINAL MEAN==--")
+    print("("+ str(sum_kp / 8) + ", " + str(sum_ki / 8) + ", " + str(sum_kd / 8) + ")")
+    
 inertial.set_heading(0,DEGREES)
 """
 while(True):
