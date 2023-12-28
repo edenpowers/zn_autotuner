@@ -180,7 +180,7 @@ class Firefly:
         #kp_absorption = 5.6e-4
         #ki_absorption = 4e-5
         #kd_absorption = 0.0048
-        absorption = 0.002
+        absorption = 0.017
         next_vector = [0,0,0]
         for i in range(batch_num - 1):
             fly_distance_sq = (self.kp-other_kp[i])**2 + (self.ki-other_ki[i])**2 + (self.kd-other_kd[i])**2
