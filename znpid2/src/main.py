@@ -18,14 +18,14 @@ from vex import *
 # Brain should be defined by default
 brain = Brain()
 controller = Controller()
-f_left_motor = Motor(Ports.PORT10, True)
-b_left_motor = Motor(Ports.PORT20, True)
-t_left_motor = Motor(Ports.PORT19, False)
-f_right_motor = Motor(Ports.PORT1, False)
-b_right_motor = Motor(Ports.PORT11, False)
-t_right_motor = Motor(Ports.PORT12, True)
-intake = Motor(Ports.PORT9, False)
-inertial = Inertial(Ports.PORT15)
+f_left_motor = Motor(Ports.PORT11, True)
+b_left_motor = Motor(Ports.PORT12, True)
+t_left_motor = Motor(Ports.PORT14, False)
+f_right_motor = Motor(Ports.PORT17, False)
+b_right_motor = Motor(Ports.PORT18, False)
+t_right_motor = Motor(Ports.PORT19, True)
+intake = Motor(Ports.PORT10, False)
+inertial = Inertial(Ports.PORT2)
 pto = DigitalOut(brain.three_wire_port.h)
 wings = DigitalOut(brain.three_wire_port.g)
 
@@ -69,10 +69,10 @@ def cw_turn_pid(adegrees, kp, ki, kd, max_steps, return_period = 0):
         err = adegrees - cur_degrees
         cur_step+=1
         prev_der = prev_degrees - cur_degrees
-        print("err: " + str(abs(err)))
-        print("deriv = " + str(prev_degrees - cur_degrees))
-        print("cout time:  " + str(cout))
-        print("tai's model : " +str(tai94))
+        #print("err: " + str(abs(err)))
+        #print("deriv = " + str(prev_degrees - cur_degrees))
+        #print("cout time:  " + str(cout))
+        #print("tai's model : " +str(tai94))
         #osc logging
         if(err < 0):
             if(osc_started % 2==0):
@@ -89,6 +89,7 @@ def cw_turn_pid(adegrees, kp, ki, kd, max_steps, return_period = 0):
     f_right_motor.stop()
     b_right_motor.stop()
     print("exit")
+    print(inertial.heading(DEGREES))
     if(len(osc_periods) == 0):
         return 1000
     mean = sum(osc_periods) / len(osc_periods)
@@ -206,7 +207,7 @@ class Firefly:
         self.ki += next_vector[1]
         self.kd += next_vector[2]
 
-def run_FA(start_kp, start_ki, start_kd, kp_scale = 0.1, ki_scale = 0.01, kd_scale = 0.3, generations = 3):
+def run_FA(target, start_kp, start_ki, start_kd, kp_scale = 0.1, ki_scale = 0.01, kd_scale = 0.3, generations = 3):
     kp_dir = [(x) * kp_scale + start_kp for x in [1,1,1,1,-1,-1,-1,-1]]
     ki_dir = [(x) * ki_scale + start_ki for x in [1,1,-1,-1,1,1,-1,-1]]
     kd_dir = [(x) * kd_scale + start_kd for x in [1,-1,1,-1,1,-1,1,-1]]
@@ -222,7 +223,7 @@ def run_FA(start_kp, start_ki, start_kd, kp_scale = 0.1, ki_scale = 0.01, kd_sca
     for i99 in range(generations):
         new_flys = []
         for i in range(8):
-            flys[i].find_speed(90)
+            flys[i].find_speed(target)
             #print(flys[i].speed)
         for i in range(8):
             new_flys.append(Firefly(flys[i].kp,flys[i].ki,flys[i].kd, flys[i].speed))
@@ -253,21 +254,30 @@ inertial.set_heading(0,DEGREES)
 while(True):
     print(inertial.heading())
 """
+print("hello")
 while(inertial.heading() == 0):
     wait(10,MSEC)
+print("world")
 #cur kd = 1.8
 #cw_turn_pid(90,0.24,0.018,2.5*1.2,1000)
-cw_turn_pid(90,0.35,0.025,5.5,1000)
+#fa vals
+print(cw_turn_pid(90,0.2875219,0.01349781,4.560751,250, 2))
+#og vals
+print(cw_turn_pid(90,0.24,0.01825,4.5625,250, 2))
+"""
 kvals = []
-#kvals = autotune_degrees(90)
+kvals = autotune_degrees(90)
 #cw_turn_pid(90, kvals[0], kvals[1], kvals[2], 1000)
-
-
+print("--==KVALS==--")
+print("KP = " + str(kvals[0]))
+print("KI = " + str(kvals[1] / 1000))
+print("KD = " + str(kvals[2]))
 #cw_turn_pid(90,0.27,0.025,3.6875,1000)
-
+run_FA(90, kvals[0], kvals[1] / 1000, kvals[2])
 wait(1,SECONDS)
 print(inertial.heading())
 #ccw_turn_pid(180,0.35,0.025,5.5,1000)
 #wait(1,SECONDS)
 print(inertial.heading())
 #print(kvals)
+"""
